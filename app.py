@@ -13,13 +13,12 @@ CORS(app)
 
 
 # PostgreSQL connection setup
-
+conn = psycopg2.connect(os.getenv("DB_URL"))
+cursor = conn.cursor()
 
 # GET /students - list all students
 @app.route('/grades', methods=['GET'])
 def list_students():
-    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
-    cursor = conn.cursor()
     cursor.execute("SELECT id, name, grade FROM students")
     rows = cursor.fetchall()
     result = []
@@ -35,8 +34,6 @@ def list_students():
 # GET /students/<id> - get one student
 @app.route('/grades/<id>', methods=['GET'])
 def get_student(id):
-    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
-    cursor = conn.cursor()
     cursor.execute("SELECT id, name, grade FROM students WHERE id = %s", (id,))
     row = cursor.fetchone()
     if row:
@@ -58,9 +55,6 @@ def add_student():
 
     if not name or not grade:
         return jsonify({"error": "Missing name or grade"}), 400
-
-    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
-    cursor = conn.cursor()
     cursor.execute("INSERT INTO students (name, grade) VALUES (%s, %s) RETURNING id", (name, grade))
     new_id = cursor.fetchone()[0]
     conn.commit()
@@ -75,8 +69,6 @@ def update_student(id):
     name = data.get('name')
     grade = data.get('grade')
 
-    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
-    cursor = conn.cursor()
     cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
     if not cursor.fetchone():
         return jsonify({"error": "Student not found"}), 404
@@ -90,8 +82,6 @@ def update_student(id):
 # DELETE /students/<id> - delete student
 @app.route('/grades/<id>', methods=['DELETE'])
 def delete_student(id):
-    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
-    cursor = conn.cursor()
     cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
     if not cursor.fetchone():
         return jsonify({"error": "Student not found"}), 404
