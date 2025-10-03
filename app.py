@@ -1,88 +1,106 @@
-import psycopg2
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector
+import psycopg2
 import os
 from dotenv import load_dotenv
 
-# Load .env file
+# Load environment variables
 load_dotenv()
 
+# Flask app setup
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app)
 
 
-#
+# PostgreSQL connection setup
 
+
+# GET /students - list all students
 @app.route('/grades', methods=['GET'])
-def grade_list():
-    conn = psycopg2.connect(os.getenv("DB_URL"))
+def list_students():
+    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM students")
-    result = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    cursor.execute("SELECT id, name, grade FROM students")
+    rows = cursor.fetchall()
+    result = []
+    for row in rows:
+        result.append({
+            "id": row[0],
+            "name": row[1],
+            "grade": row[2]
+        })
     return jsonify(result)
 
-@app.route('/grades/<int:id>', methods=['GET'])
-def grade_detail(id):
-    conn = psycopg2.connect(os.getenv("DB_URL"))
+
+# GET /students/<id> - get one student
+@app.route('/grades/<id>', methods=['GET'])
+def get_student(id):
+    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, grade FROM students WHERE id = %s", (id,))
+    row = cursor.fetchone()
+    if row:
+        return jsonify({
+            "id": row[0],
+            "name": row[1],
+            "grade": row[2]
+        })
+    else:
+        return jsonify({"error": "Student not found"}), 404
+
+
+# POST /students - add student
+@app.route('/grades', methods=['POST'])
+def add_student():
+    data = request.get_json()
+    name = data.get('name')
+    grade = data.get('grade')
+
+    if not name or not grade:
+        return jsonify({"error": "Missing name or grade"}), 400
+
+    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO students (name, grade) VALUES (%s, %s) RETURNING id", (name, grade))
+    new_id = cursor.fetchone()[0]
+    conn.commit()
+
+    return jsonify({"id": new_id, "name": name, "grade": grade}), 201
+
+
+# PUT /students/<id> - update student
+@app.route('/grades/<id>', methods=['PUT'])
+def update_student(id):
+    data = request.get_json()
+    name = data.get('name')
+    grade = data.get('grade')
+
+    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
-    result = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    if result:
-        return jsonify(result)
-    else:
-        return jsonify({'error': 'Grade not found'}), 404
+    if not cursor.fetchone():
+        return jsonify({"error": "Student not found"}), 404
 
-@app.route('/grades', methods=['POST'])
-def grade_add():
-    data = request.get_json()
-    name = data.get('name')
-    grade = data.get('grade')
-    if not name or not grade:
-        return jsonify({'error': 'Missing name or grade'}), 400
-    conn = psycopg2.connect(os.getenv("DB_URL"))
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO students (name, grade) VALUES (%s, %s)", (name, grade))
-    conn.commit()
-    new_id = cursor.lastrowid
-    cursor.close()
-    conn.close()
-    return jsonify({'id': new_id, 'name': name, 'grade': grade}), 201
-
-@app.route('/grades/<int:id>', methods=['PUT'])
-def grade_update(id):
-    data = request.get_json()
-    name = data.get('name')
-    grade = data.get('grade')
-    if not name or not grade:
-        return jsonify({'error': 'Missing name or grade'}), 400
-    conn = psycopg2.connect(os.getenv("DB_URL"))
-    cursor = conn.cursor()
     cursor.execute("UPDATE students SET name = %s, grade = %s WHERE id = %s", (name, grade, id))
     conn.commit()
-    affected = cursor.rowcount
-    cursor.close()
-    conn.close()
-    if affected == 0:
-        return jsonify({'error': 'Grade not found'}), 404
-    return jsonify({'id': id, 'name': name, 'grade': grade})
 
-@app.route('/grades/<int:id>', methods=['DELETE'])
-def grade_delete(id):
-    conn = psycopg2.connect(os.getenv("DB_URL"))
+    return jsonify({"id": id, "name": name, "grade": grade})
+
+
+# DELETE /students/<id> - delete student
+@app.route('/grades/<id>', methods=['DELETE'])
+def delete_student(id):
+    conn = psycopg2.connect(os.getenv("POSTGRES_URL"))
     cursor = conn.cursor()
+    cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
+    if not cursor.fetchone():
+        return jsonify({"error": "Student not found"}), 404
+
     cursor.execute("DELETE FROM students WHERE id = %s", (id,))
     conn.commit()
-    affected = cursor.rowcount
-    cursor.close()
-    conn.close()
-    if affected == 0:
-        return jsonify({'error': 'Grade not found'}), 404
-    return jsonify({'message': f'Grade with id {id} deleted'})
+    return jsonify({"message": f"Student with id {id} deleted"})
 
+
+# Run the app
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(debug=True, port=5000)
