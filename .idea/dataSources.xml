@@ -8,5 +8,12 @@
       <jdbc-url>jdbc:mysql://tcp.ap-northeast-1.clawcloudrun.com:40910/iscg7444</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="iscg7444@dpg-d38v7mnfte5s73ce16d0-a.oregon-postgres.render.com" uuid="b704cc2a-9581-4c1c-be71-6ea8545013f6">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://dpg-d38v7mnfte5s73ce16d0-a.oregon-postgres.render.com/iscg7444</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>

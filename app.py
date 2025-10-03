@@ -11,12 +11,13 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-conn = psycopg2.connect(os.getenv("DB_URL"))
-cursor = conn.cursor()
+
 #
 
 @app.route('/grades', methods=['GET'])
 def grade_list():
+    conn = psycopg2.connect(os.getenv("DB_URL"))
+    cursor = conn.cursor()
     cursor.execute("SELECT * FROM students")
     result = cursor.fetchall()
     cursor.close()
@@ -25,6 +26,8 @@ def grade_list():
 
 @app.route('/grades/<int:id>', methods=['GET'])
 def grade_detail(id):
+    conn = psycopg2.connect(os.getenv("DB_URL"))
+    cursor = conn.cursor()
     cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
     result = cursor.fetchone()
     cursor.close()
@@ -41,6 +44,8 @@ def grade_add():
     grade = data.get('grade')
     if not name or not grade:
         return jsonify({'error': 'Missing name or grade'}), 400
+    conn = psycopg2.connect(os.getenv("DB_URL"))
+    cursor = conn.cursor()
     cursor.execute("INSERT INTO students (name, grade) VALUES (%s, %s)", (name, grade))
     conn.commit()
     new_id = cursor.lastrowid
@@ -55,6 +60,8 @@ def grade_update(id):
     grade = data.get('grade')
     if not name or not grade:
         return jsonify({'error': 'Missing name or grade'}), 400
+    conn = psycopg2.connect(os.getenv("DB_URL"))
+    cursor = conn.cursor()
     cursor.execute("UPDATE students SET name = %s, grade = %s WHERE id = %s", (name, grade, id))
     conn.commit()
     affected = cursor.rowcount
@@ -66,6 +73,8 @@ def grade_update(id):
 
 @app.route('/grades/<int:id>', methods=['DELETE'])
 def grade_delete(id):
+    conn = psycopg2.connect(os.getenv("DB_URL"))
+    cursor = conn.cursor()
     cursor.execute("DELETE FROM students WHERE id = %s", (id,))
     conn.commit()
     affected = cursor.rowcount
