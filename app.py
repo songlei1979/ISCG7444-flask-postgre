@@ -1,96 +1,104 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import psycopg2
+from redis import Redis
+from redis.connection import SSLConnection
 import os
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# Flask app setup
+# Create Flask app
 app = Flask(__name__)
 CORS(app)
 
+# Connect to Redis using SSL
+redis_client = Redis.from_url(
+    os.getenv("REDIS_URL"),
+    connection_class=SSLConnection
+)
 
-# PostgreSQL connection setup
-conn = psycopg2.connect(os.getenv("DB_URL"))
-cursor = conn.cursor()
+# Prefixes
+GRADE_PREFIX = "grade:"
+ID_KEY = "grades:next_id"  # metadata key for auto-increment ID
 
-# GET /students - list all students
+# Build Redis key for a given grade ID
+def build_key(id):
+    return f"{GRADE_PREFIX}{id}"
+
+# GET /grades - List all grades
 @app.route('/grades', methods=['GET'])
-def list_students():
-    cursor.execute("SELECT id, name, grade FROM students")
-    rows = cursor.fetchall()
+def list_grades():
+    keys = redis_client.keys(f"{GRADE_PREFIX}*")
     result = []
-    for row in rows:
-        result.append({
-            "id": row[0],
-            "name": row[1],
-            "grade": row[2]
-        })
+    for key in keys:
+        try:
+            value = redis_client.hgetall(key)
+            result.append({
+                "id": key.decode().split(":")[1],
+                "name": value.get(b'name', b'').decode(),
+                "grade": value.get(b'grade', b'').decode()
+            })
+        except Exception as e:
+            # Skip keys that aren't valid hash entries
+            continue
     return jsonify(result)
 
-
-# GET /students/<id> - get one student
+# GET /grades/<id> - Get a single grade by ID
 @app.route('/grades/<id>', methods=['GET'])
-def get_student(id):
-    cursor.execute("SELECT id, name, grade FROM students WHERE id = %s", (id,))
-    row = cursor.fetchone()
-    if row:
-        return jsonify({
-            "id": row[0],
-            "name": row[1],
-            "grade": row[2]
-        })
-    else:
-        return jsonify({"error": "Student not found"}), 404
+def get_grade(id):
+    key = build_key(id)
+    if not redis_client.exists(key):
+        return jsonify({'error': 'Grade not found'}), 404
+    value = redis_client.hgetall(key)
+    return jsonify({
+        "id": id,
+        "name": value.get(b'name', b'').decode(),
+        "grade": value.get(b'grade', b'').decode()
+    })
 
-
-# POST /students - add student
+# POST /grades - Add a new grade
 @app.route('/grades', methods=['POST'])
-def add_student():
+def add_grade():
     data = request.get_json()
     name = data.get('name')
     grade = data.get('grade')
 
     if not name or not grade:
-        return jsonify({"error": "Missing name or grade"}), 400
-    cursor.execute("INSERT INTO students (name, grade) VALUES (%s, %s) RETURNING id", (name, grade))
-    new_id = cursor.fetchone()[0]
-    conn.commit()
+        return jsonify({'error': 'Missing name or grade'}), 400
+
+    new_id = redis_client.incr(ID_KEY)
+    key = build_key(new_id)
+    redis_client.hset(key, mapping={"name": name, "grade": grade})
 
     return jsonify({"id": new_id, "name": name, "grade": grade}), 201
 
-
-# PUT /students/<id> - update student
+# PUT /grades/<id> - Update existing grade
 @app.route('/grades/<id>', methods=['PUT'])
-def update_student(id):
+def update_grade(id):
+    key = build_key(id)
+    if not redis_client.exists(key):
+        return jsonify({'error': 'Grade not found'}), 404
+
     data = request.get_json()
     name = data.get('name')
     grade = data.get('grade')
 
-    cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
-    if not cursor.fetchone():
-        return jsonify({"error": "Student not found"}), 404
+    if not name or not grade:
+        return jsonify({'error': 'Missing name or grade'}), 400
 
-    cursor.execute("UPDATE students SET name = %s, grade = %s WHERE id = %s", (name, grade, id))
-    conn.commit()
-
+    redis_client.hset(key, mapping={"name": name, "grade": grade})
     return jsonify({"id": id, "name": name, "grade": grade})
 
-
-# DELETE /students/<id> - delete student
+# DELETE /grades/<id> - Delete a grade
 @app.route('/grades/<id>', methods=['DELETE'])
-def delete_student(id):
-    cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
-    if not cursor.fetchone():
-        return jsonify({"error": "Student not found"}), 404
+def delete_grade(id):
+    key = build_key(id)
+    if not redis_client.exists(key):
+        return jsonify({'error': 'Grade not found'}), 404
+    redis_client.delete(key)
+    return jsonify({'message': f'Grade with id {id} deleted'})
 
-    cursor.execute("DELETE FROM students WHERE id = %s", (id,))
-    conn.commit()
-    return jsonify({"message": f"Student with id {id} deleted"})
-
-
-# Run the app
+# Run the Flask app
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", port=5001, debug=True)
